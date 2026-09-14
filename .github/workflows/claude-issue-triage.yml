@@ -97,6 +97,10 @@ jobs:
 
             ## Paso 2 — Comentario de diagnóstico
             Redacta el diagnóstico en un archivo temporal (`tmp=$(mktemp)`) y publícalo.
+            El cuerpo completo debe estar escrito en formato Markdown válido que GitHub
+            pueda renderizar correctamente (encabezados con `##`, listas, checklists
+            `- [ ]`, bloques de código con triple backtick y el lenguaje indicado,
+            enlaces `[texto](url)`, etc.). No uses sintaxis que GitHub no soporte.
             La PRIMERA línea del cuerpo debe ser exactamente:
                 <!-- claude-triage-report -->
             Seguida de esta plantilla (en Markdown, secciones con `##`):
