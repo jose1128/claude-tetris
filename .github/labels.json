@@ -1,0 +1,27 @@
+[
+  { "name": "type:bug",        "color": "d73a4a", "description": "Algo no funciona como debería" },
+  { "name": "type:feature",    "color": "a2eeef", "description": "Nueva funcionalidad o mejora" },
+  { "name": "type:question",   "color": "d876e3", "description": "Duda o solicitud de aclaración" },
+  { "name": "type:docs",       "color": "0075ca", "description": "Cambios en documentación (README, CLAUDE.md, comentarios)" },
+  { "name": "type:chore",      "color": "cfd3d7", "description": "Mantenimiento, tooling, CI, sin impacto en el juego" },
+
+  { "name": "area:gameplay",   "color": "0e8a16", "description": "Lógica de juego en game.js: collide, tryRotate, lockPiece, clearLines, loop" },
+  { "name": "area:render",     "color": "0e8a16", "description": "Dibujado en canvas: draw, ghost piece, preview de siguiente pieza" },
+  { "name": "area:input",      "color": "0e8a16", "description": "Manejo de teclado: handler de keydown, mover/rotar/soft-drop/hard-drop/pausa" },
+  { "name": "area:scoring",    "color": "0e8a16", "description": "Puntuación, LINE_SCORES, nivel y velocidad de caída" },
+  { "name": "area:ui",         "color": "0e8a16", "description": "index.html, style.css, HUD, overlay de pausa/game-over" },
+  { "name": "area:docs",       "color": "0e8a16", "description": "README.md, CLAUDE.md" },
+  { "name": "area:ci",         "color": "0e8a16", "description": "Workflows de GitHub Actions y configuración de .github/" },
+
+  { "name": "priority:P0",     "color": "b60205", "description": "Crítico: el juego no arranca o es injugable" },
+  { "name": "priority:P1",     "color": "d93f0b", "description": "Alto: bug importante o funcionalidad muy solicitada" },
+  { "name": "priority:P2",     "color": "fbca04", "description": "Medio: molesto pero con workaround" },
+  { "name": "priority:P3",     "color": "c5def5", "description": "Bajo: cosmético o nice-to-have" },
+
+  { "name": "size:S",          "color": "c2e0c6", "description": "Cambio pequeño y localizado (<~30 líneas)" },
+  { "name": "size:M",          "color": "c2e0c6", "description": "Cambio moderado, varias funciones" },
+  { "name": "size:L",          "color": "c2e0c6", "description": "Cambio grande o que toca varios archivos / diseño" },
+
+  { "name": "needs-info",      "color": "fef2c0", "description": "Falta información para reproducir o entender el problema" },
+  { "name": "triaged",         "color": "5319e7", "description": "Analizado y clasificado automáticamente por Claude" }
+]

@@ -1,0 +1,157 @@
+name: Claude Issue Triage
+
+on:
+  issues:
+    types: [opened, edited]
+  workflow_dispatch:
+    inputs:
+      issue_number:
+        description: "Número de issue a re-analizar (para pruebas manuales)"
+        required: true
+
+concurrency:
+  group: issue-triage-${{ github.event.issue.number || inputs.issue_number }}
+  cancel-in-progress: true
+
+jobs:
+  triage:
+    runs-on: ubuntu-latest
+    # Evita: (a) bucles provocados por acciones de bots, (b) doble ejecución con
+    # claude.yml, que ya cubre el caso de una mención explícita a @claude.
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.sender.type != 'Bot' &&
+       !contains(github.event.issue.body, '@claude') &&
+       !contains(github.event.issue.title, '@claude'))
+    permissions:
+      contents: read
+      issues: write        # crear/actualizar labels y comentar el diagnóstico
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Sincronizar taxonomía de labels
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          jq -c '.[]' .github/labels.json | while read -r l; do
+            name=$(jq -r '.name' <<<"$l")
+            color=$(jq -r '.color' <<<"$l")
+            desc=$(jq -r '.description' <<<"$l")
+            echo "Sincronizando label: $name"
+            gh label create "$name" --color "$color" --description "$desc" --force
+          done
+
+      - name: Triage con Claude
+        uses: anthropics/claude-code-action@v1
+        env:
+          ISSUE_NUMBER: ${{ github.event.issue.number || inputs.issue_number }}
+          REPO: ${{ github.repository }}
+        with:
+          # Mismo secreto ya configurado en GitHub y usado por claude.yml y
+          # claude-code-review.yml. NO se crea ningún secreto nuevo.
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          # Expone el GITHUB_TOKEN efímero a las herramientas Bash(gh ...) de Claude.
+          settings: |
+            {
+              "env": {
+                "GH_TOKEN": "${{ secrets.GITHUB_TOKEN }}"
+              }
+            }
+          claude_args: >-
+            --max-turns 25
+            --allowedTools "Read,Grep,Glob,Bash(gh issue view:*),Bash(gh issue edit:*),Bash(gh issue comment:*),Bash(gh label list:*),Bash(gh search:*),Bash(gh api:*),Bash(cat:*),Bash(mktemp)"
+          prompt: |
+            Eres el agente de TRIAGE de issues del repositorio ${{ github.repository }}
+            (un Tetris en JavaScript vanilla + HTML5 Canvas, sin build ni dependencias).
+
+            El issue a analizar es el número: ${{ github.event.issue.number || inputs.issue_number }}
+
+            ## Paso 0 — Reunir contexto
+            - Ejecuta `gh issue view ${{ github.event.issue.number || inputs.issue_number }} --json number,title,body,author,labels,comments`
+              para obtener el título, cuerpo y comentarios ACTUALES del issue.
+            - Lee `CLAUDE.md` y el código relevante del repositorio: `game.js`, `index.html`,
+              `style.css`, y los workflows en `.github/workflows/` si el issue trata de CI.
+            - NO concluyas nada sobre causa raíz sin haber leído el código real. Toda
+              afirmación técnica debe citar archivo y línea, con el formato
+              `game.js:120 lockPiece()`.
+
+            ## Paso 1 — Etiquetado (taxonomía FIJA)
+            - Lee `.github/labels.json`. SOLO puedes usar labels que aparezcan en ese archivo.
+              Está PROHIBIDO crear labels nuevas.
+            - Elige exactamente:
+              - un `type:*`
+              - uno o más `area:*` (según qué parte del código toca; ver descripciones en el JSON)
+              - un `priority:*`
+              - un `size:*`
+            - Añade `needs-info` solo si falta información crítica para reproducir o entender el problema.
+            - Añade SIEMPRE `triaged` al terminar.
+            - Aplica las labels con:
+              `gh issue edit <n> --add-label "type:bug" --add-label "area:render" ...`
+            - Si el issue YA tenía labels de esta taxonomía (re-ejecución sobre un issue
+              editado), retira con `--remove-label` las que ya no apliquen para que no se acumulen.
+              No toques labels que no pertenezcan a `.github/labels.json`.
+
+            ## Paso 2 — Comentario de diagnóstico
+            Redacta el diagnóstico en un archivo temporal (`tmp=$(mktemp)`) y publícalo.
+            La PRIMERA línea del cuerpo debe ser exactamente:
+                <!-- claude-triage-report -->
+            Seguida de esta plantilla (en Markdown, secciones con `##`):
+
+              ## Clasificación
+              Tipo, área(s), prioridad y tamaño elegidos, con UNA frase que justifique la prioridad.
+
+              ## Resumen
+              2-4 frases: qué reporta el issue y por qué importa.
+
+              ## Reproducción
+              Pasos para reproducir. Comportamiento actual vs. comportamiento esperado.
+              Si el issue no da pasos suficientes, dilo aquí explícitamente.
+
+              ## Análisis técnico
+              Archivos y funciones implicados, con referencias `archivo:línea`. Explica cómo
+              fluye el control por esas funciones en relación con el problema.
+
+              ## Hipótesis de causa raíz
+              La(s) explicación(es) más probable(s), ordenadas por probabilidad.
+
+              ## Plan de solución propuesto
+              Pasos numerados y concretos para implementar el arreglo. Menciona qué funciones
+              modificar y cómo. NO escribas el diff ni el código final: describe el cambio.
+
+              ## Criterios de aceptación
+              Checklist verificable (`- [ ] ...`) de lo que debe cumplirse para dar el issue por resuelto.
+
+              ## Riesgos y efectos colaterales
+              Qué podría romperse, qué constantes / interacciones vigilar (ver "Tunable constants" en CLAUDE.md).
+
+              ## Información faltante
+              Preguntas concretas al autor. OMITE esta sección entera si no falta nada.
+
+            Reglas de contenido:
+            - Responde en el MISMO idioma en que está escrito el issue (si está en español, en español).
+            - Si el issue es una PREGUNTA y no un defecto: marca `type:question`, y sustituye
+              "Hipótesis de causa raíz" / "Plan de solución propuesto" por una sección
+              `## Respuesta` que conteste directamente, citando el código.
+            - Si es una `type:feature`: "Hipótesis de causa raíz" pasa a ser
+              `## Consideraciones de diseño`.
+
+            ## Paso 3 — Publicar de forma idempotente
+            - En los comentarios que obtuviste en el Paso 0, busca uno cuyo cuerpo empiece por
+              `<!-- claude-triage-report -->` Y cuyo autor sea el bot de la Action
+              (login termina en `[bot]`).
+            - Si existe: actualízalo con
+              `gh api -X PATCH /repos/${{ github.repository }}/issues/comments/<comment_id> -F body=@"$tmp"`
+            - Si no existe: créalo con
+              `gh issue comment ${{ github.event.issue.number || inputs.issue_number }} --body-file "$tmp"`
+            - Nunca publiques un segundo comentario de triage: una edición del issue debe
+              REFRESCAR el diagnóstico existente.
+
+            ## Restricciones
+            - NO modifiques el título ni el cuerpo del issue (dispararía un bucle de eventos `edited`).
+            - NO cierres el issue.
+            - NO edites archivos del repositorio ni abras PRs.
+            - Limítate a las herramientas permitidas.
